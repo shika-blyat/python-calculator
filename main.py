@@ -7,9 +7,6 @@ class ParseError(Exception):
 
 
 class Lexer:
-    OP_MAP = {"+": Operator.ADD, "-": Operator.SUB,
-              "/": Operator.DIV, "*": Operator.MUL}
-
     def __init__(self, code):
         self.code = code
         self.idx = 0
@@ -35,7 +32,7 @@ class Lexer:
                 self.advance()
             elif curr in ("+", "-", "*", "/"):
                 result_tokens.append(
-                    Token(Op(self.OP_MAP[curr]), range(self.idx, self.idx + 1)))
+                    Token(Op(Operator.from_s(curr)), range(self.idx, self.idx + 1)))
                 self.advance()
             elif curr.isspace():
                 self.advance()
@@ -57,61 +54,78 @@ class Lexer:
     def is_at_end(self) -> bool:
         return self.idx >= len(self.code)
 
-#  1 + 2 * 3
 
+class ShuntingYard:
+    def __init__(self, tokens: [Token]):
+        self.tokens = tokens
+        self.operator_stack = []
+        self.ast_stack = []
 
-PRIORITY_MAP = {Operator.ADD: 5, Operator.SUB: 5,
-                Operator.MUL: 10, Operator.DIV: 10}
-
-
-def shunting_yard(tokens: [Token]) -> Expr:
-    operator_stack = []
-    ast_stack = []
-    for token in tokens:
-        if isinstance(token.kind, Num):
-            ast_stack.append(Literal(token.kind.value))
-        elif isinstance(token.kind, Op):
-            while operator_stack:
-                if not(operator_stack[-1], Paren) and PRIORITY_MAP[operator_stack[-1]] >= PRIORITY_MAP[token.kind.op]:
-                    rhs = ast_stack.pop()
-                    lhs = ast_stack.pop()
-                    ast_stack.append(BinOp(operator_stack.pop(), lhs, rhs))
-                else:
-                    break
-            operator_stack.append(token.kind.op)
-        elif isinstance(token.kind, Paren):
-            if token.kind.is_left:
-                operator_stack.append(token.kind)
-            else:
-                while operator_stack:
-                    last_op = operator_stack.pop()
-                    if isinstance(last_op, Paren) and last_op.is_left:
-                        break
+    def into_ast(self) -> Expr:
+        last_was_operator = True
+        for token in self.tokens:
+            if isinstance(token.kind, Num):
+                last_was_operator = False
+                self.ast_stack.append(Literal(token.kind.value))
+            elif isinstance(token.kind, Op):
+                if last_was_operator:
+                    if token.kind.op == Operator.ADD:
+                        token.kind = Operator.POS
+                    elif token.kind.op == Operator.SUB:
+                        token.kind.op = Operator.NEG
                     else:
-                        rhs = ast_stack.pop()
-                        lhs = ast_stack.pop()
-                        ast_stack.append(BinOp(last_op, lhs, rhs))
+                        raise ParseError(
+                            f"Expected expression at pos: {token.pos}")
+                last_was_operator = True
+                while (self.operator_stack and not isinstance(self.operator_stack[-1], Paren)
+                       and (self.operator_stack[-1].prec() > token.kind.op.prec() or (self.operator_stack[-1].prec() >= token.kind.op.prec()
+                                                                                      and token.kind.op.is_left_assoc()))):
+                    self.push_operation()
+                self.operator_stack.append(token.kind.op)
+            elif isinstance(token.kind, Paren):
+                if token.kind.is_left:
+                    last_was_operator = True
+                    self.operator_stack.append(token.kind)
                 else:
-                    raise ParseError(
-                        f"Mismatched parenthesis at range {token.pos}")
+                    last_was_operator = False
+                    while self.operator_stack:
+                        last_op = self.operator_stack[-1]
+                        if isinstance(last_op, Paren):
+                            self.operator_stack.pop()
+                            break
+                        else:
+                            self.push_operation()
+                    else:
+                        raise ParseError(
+                            f"Mismatched parenthesis at range {token.pos}")
+        for op in self.operator_stack[::-1]:
+            if isinstance(op, Paren):
+                raise ParseError(f"Unclosed parenthesis")
+            self.push_operation(op)
+        assert len(self.ast_stack) == 1
+        return self.ast_stack[0]
 
-    for op in operator_stack[::-1]:
-        if isinstance(op, Paren):
-            raise ParseError(f"Unclosed parenthesis")
-        rhs = ast_stack.pop()
-        lhs = ast_stack.pop()
-        ast_stack.append(BinOp(op, lhs, rhs))
-    return ast_stack[0]
+    def push_operation(self, op=None):
+        if op == None:
+            op = self.operator_stack.pop()
+        if op.is_binary():
+            rhs = self.ast_stack.pop()
+            lhs = self.ast_stack.pop()
+            self.ast_stack.append(
+                BinOp(op, lhs, rhs))
+        else:
+            value = self.ast_stack.pop()
+            self.ast_stack.append(UnOp(op, value))
 
 
-CODE = "1 + 2) * 3"
+CODE = "--1 + (-2 * 3)"
 
 
 def main():
     lexer = Lexer(CODE)
     tokens = lexer.tokenize()
     print(tokens)
-    ast = shunting_yard(tokens)
+    ast = ShuntingYard(tokens).into_ast()
     print(ast)
     print(ast.eval())
 

@@ -1,11 +1,10 @@
 from abc import ABC
 from tokens import Operator
-from operator import add, sub, truediv, mul
 
 
 class Expr(ABC):
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 class Literal(Expr):
@@ -20,10 +19,6 @@ class Literal(Expr):
 
 
 class BinOp(Expr):
-    OP_MAP = {Operator.ADD: "+", Operator.SUB: "-",
-              Operator.DIV: "/", Operator.MUL: "*"}
-    OP_FUN_MAP = {Operator.ADD: add, Operator.SUB: sub,
-                  Operator.DIV: truediv, Operator.MUL: mul}
 
     def __init__(self, op: Operator, lhs: Expr, rhs: Expr):
         self.op = op
@@ -31,24 +26,20 @@ class BinOp(Expr):
         self.rhs = rhs
 
     def eval(self):
-        return self.OP_FUN_MAP[self.op](self.lhs.eval(), self.rhs.eval())
+        return self.op.as_func()(self.lhs.eval(), self.rhs.eval())
 
     def __str__(self):
-        return f"({self.lhs} {self.OP_MAP[self.op]} {self.rhs})"
-
-# BinOp(Operator.ADD, Literal(1), BinOp(Operator.MUL, Literal(2), Literal(3)))
+        return f"({self.lhs} {self.op} {self.rhs})"
 
 
-"""
-1 + (2 * 3)
-1 2 3 * +
-(1 + (2 * 3))
+class UnOp(Expr):
 
-(+, 1, (*, 2, 3))
+    def __init__(self, op: Operator, value: Expr):
+        self.op = op
+        self.value = value
 
-    +
-   / \
-  1   *
-     / \
-    2   3
-"""
+    def eval(self):
+        return self.op.as_func()(self.value.eval())
+
+    def __str__(self):
+        return f"({self.op} {self.value})"
