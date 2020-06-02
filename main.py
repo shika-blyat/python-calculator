@@ -1,8 +1,6 @@
 from tokens import *
 from expr import *
 
-CODE = "1 + 2 * 3"
-
 
 class ParseError(Exception):
     pass
@@ -74,18 +72,39 @@ def shunting_yard(tokens: [Token]) -> Expr:
             ast_stack.append(Literal(token.kind.value))
         elif isinstance(token.kind, Op):
             while operator_stack:
-                if PRIORITY_MAP[operator_stack[-1]] >= PRIORITY_MAP[token.kind.op]:
+                if not(operator_stack[-1], Paren) and PRIORITY_MAP[operator_stack[-1]] >= PRIORITY_MAP[token.kind.op]:
                     rhs = ast_stack.pop()
                     lhs = ast_stack.pop()
                     ast_stack.append(BinOp(operator_stack.pop(), lhs, rhs))
                 else:
                     break
             operator_stack.append(token.kind.op)
+        elif isinstance(token.kind, Paren):
+            if token.kind.is_left:
+                operator_stack.append(token.kind)
+            else:
+                while operator_stack:
+                    last_op = operator_stack.pop()
+                    if isinstance(last_op, Paren) and last_op.is_left:
+                        break
+                    else:
+                        rhs = ast_stack.pop()
+                        lhs = ast_stack.pop()
+                        ast_stack.append(BinOp(last_op, lhs, rhs))
+                else:
+                    raise ParseError(
+                        f"Mismatched parenthesis at range {token.pos}")
+
     for op in operator_stack[::-1]:
+        if isinstance(op, Paren):
+            raise ParseError(f"Unclosed parenthesis")
         rhs = ast_stack.pop()
         lhs = ast_stack.pop()
         ast_stack.append(BinOp(op, lhs, rhs))
     return ast_stack[0]
+
+
+CODE = "1 + 2) * 3"
 
 
 def main():
